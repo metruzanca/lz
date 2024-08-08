@@ -8,12 +8,62 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-func shellCommand(name string, args []string) ([]byte, error) {
+var red = color.New(color.FgRed).SprintFunc()
+
+func shellCommand(name string, args []string) {
 	cmd := exec.Command(name, args...)
-	return cmd.CombinedOutput()
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Println("Error creating StdoutPipe:", err)
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		fmt.Println("Error creating StderrPipe:", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Println("Error starting command:", err)
+		return
+	}
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stdout.Read(buf)
+			if n > 0 {
+				fmt.Print(string(buf[:n]))
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stderr.Read(buf)
+			if n > 0 {
+				fmt.Print(red(string(buf[:n])))
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Wait for the command to complete
+	if err := cmd.Wait(); err != nil {
+		fmt.Println("Command finished with error:", err)
+	}
 }
 
 // pCmd represents the p command
@@ -30,12 +80,7 @@ Great for running multiple build tools e.g. templ, tailwind and go from a single
 			segments := strings.Fields(item)
 			cmdName := segments[0]
 			cmdArgs := segments[1:]
-			stdout, stderr := shellCommand(cmdName, cmdArgs)
-			if stderr != nil {
-				fmt.Println("error:", stderr)
-			} else {
-				fmt.Println(string(stdout))
-			}
+			shellCommand(cmdName, cmdArgs)
 		}
 	},
 }
